@@ -1,0 +1,16 @@
+{
+  "name": "TCG Forge",
+  "short_name": "TCG Forge",
+  "description": "Creador de cartas TCG",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#0984e3",
+  "icons": [
+    {
+      "src": "icon.png.jpg",
+      "sizes": "512x512",
+      "type": "image/jpg"
+    }
+  ]
+}

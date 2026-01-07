@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Forge - Ultimate Edition (Patched)</title>
+    <meta name="theme-color" content="#0984e3">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        :root {
+            --inner-shadow: inset 2px 2px 5px rgba(0,0,0,0.4);
+            --bg-dark: #1a1a1a;
+            --panel-bg: #2d3436;
+            /* Textura de ruido base64 para evitar problemas de CORS */
+            --texture-noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+
+        /* --- CANVAS DE LA CARTA --- */
+        #card-canvas {
+            width: 227px; height: 333px; 
+            background: #000; padding: 6px; border-radius: 12px;
+            position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.9);
+            overflow: hidden; margin-bottom: 30px; flex-shrink: 0;
+        }
+
+        .marble { 
+            width: 100%; height: 100%; border-radius: 6px; position: relative; 
+            display: flex; flex-direction: column; align-items: center; 
+            background-size: cover !important; background-position: center !important;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.2);
+        }
+        
+        /* Texturas base optimizadas (Sin URLs externas) */
+        .marble::before {
+            content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
+            background-image: var(--texture-noise); pointer-events: none; z-index: 0;
+        }
+
+        .m-normal { background: linear-gradient(135deg, #d4a76a, #e6c596); } 
+        .m-effect { background: linear-gradient(135deg, #d35400, #e67e22); }
+        .m-divine { background: linear-gradient(135deg, #2d3436, #636e72); color: white; } 
+        .m-spell { background: linear-gradient(135deg, #00b894, #55efc4); }
+        .m-rune { background: linear-gradient(135deg, #6c5ce7, #a29bfe); }
+
+        .art-box {
+            width: 202px; height: 170px; margin-top: 8px;
+            background: #222; border: 2.5px solid #444; 
+            box-shadow: var(--inner-shadow); overflow: hidden; z-index: 2;
+        }
+        .art-box img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+
+        .header-row {
+            width: 215px; height: 30px; margin-top: 6px;
+            display: flex; justify-content: space-between; align-items: center; z-index: 2;
+        }
+
+        #display-name {
+            font-family: 'Times New Roman', serif; font-weight: bold; font-size: 10px;
+            text-transform: uppercase; margin: 0; padding: 2px 8px; color: #000;
+            flex: 1; white-space: nowrap; display: flex; align-items: center; 
+            overflow: hidden;
+            background: rgba(255,255,255,0.4); border-radius: 3px;
+            box-shadow: inset 1px 1px 3px rgba(0,0,0,0.3);
+            border: 0.5px solid rgba(0,0,0,0.1);
+        }
+        
+        #name-inner { display: inline-block; transform-origin: left center; white-space: nowrap; }
+        .m-divine #display-name { color: #fff; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.3); }
+
+        .attr-badge {
+            width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid #111;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 6px; font-weight: 900; color: white; text-shadow: 0px 1px 2px #000;
+            flex-shrink: 0; margin-left: 5px; z-index: 2;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.4), inset -2px -3px 5px rgba(0,0,0,0.7), inset 2px 3px 5px rgba(255,255,255,0.5);
+        }
+
+        .level-row { width: 210px; height: 14px; margin-bottom: 2px; display: flex; justify-content: flex-start; gap: 1.5px; padding-left: 4px; z-index: 2; }
+        .star {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #ff4500, #ff0907 60%, #4a0000);
+            border: 0.5px solid #000; display: flex; align-items: center; justify-content: center;
+            font-size: 8px; color: #fff01e; box-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+        }
+
+        .effect-box-container {
+            position: relative; width: 206px; height: 68px; margin-top: 4px; z-index: 2; padding: 2px; background: #333;
+            clip-path: polygon(0% 4px, 4px 0%, calc(100% - 4px) 0%, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0% calc(100% - 4px));
+        }
+
+        .effect-box {
+            width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(245,245,245,0.95), rgba(220,220,220,0.95));
+            box-sizing: border-box; padding: 4px 6px; color: #111; 
+            display: flex; flex-direction: column;
+            clip-path: polygon(0% 3px, 3px 0%, calc(100% - 3px) 0%, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0% calc(100% - 3px));
+            font-size: 6px; line-height: 1.1; word-wrap: break-word;
+        }
+
+        .type-line { font-weight: bold; font-size: 7px; border-bottom: 1px solid rgba(0,0,0,0.15); margin-bottom: 2px; flex-shrink: 0; font-family: 'Times New Roman', sans-serif; }
+        
+        #display-desc { 
+            font-size: 6px; line-height: 1.1; word-wrap: break-word; flex-grow: 1; font-family: 'Times New Roman', serif;
+            display: block; overflow: hidden;
+        }
+
+        .stats-area {
+            width: 200px; margin-top: 1px; display: flex; justify-content: flex-end; gap: 8px;
+            font-family: 'Times New Roman', monospace; z-index: 3;
+        }
+        .stat-pill { 
+            background: rgba(255,255,255,0.85); padding: 1px 5px; border-radius: 3px; 
+            font-size: 9px; font-weight: bold; color: #000; border: 1px solid #333;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .card-id-line { position: absolute; bottom: 12px; left: 15px; font-size: 7px; font-weight: bold; color: #000; opacity: 0.9; z-index: 2; }
+        .footer-line { position: absolute; bottom: 3px; width: 100%; padding: 0 10px; font-size: 6px; color: #111; box-sizing: border-box; display: flex; justify-content: space-between; align-items: flex-end; z-index: 2; }
+
+        /* --- CONTROLES Y UI --- */
+        .controls, .library { background: var(--panel-bg); padding: 20px; border-radius: 10px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        
+        input, select, textarea { padding: 10px; border-radius: 5px; border: none; width: 100%; box-sizing: border-box; background: #eee; color: #000; font-family: inherit; }
+        input:focus, textarea:focus { outline: 2px solid #0984e3; }
+        
+        button { background: #0984e3; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; width: 100%; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        
+        .btn-save { background: #27ae60; }
+        .btn-pdf { background: #d63031; }
+        .btn-clear { background: #e67e22; }
+        .btn-new { background: #6c5ce7; margin-bottom: 10px; }
+        
+        .search-box { position: relative; display: flex; align-items: center; }
+        .search-box input { padding-left: 35px; }
+        .search-box::before { content: '🔍'; position: absolute; left: 10px; font-size: 14px; pointer-events: none; color: #666; }
+
+        .card-list { max-height: 300px; overflow-y: auto; background: #1e272e; border-radius: 5px; padding: 10px; border: 1px solid #444; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; font-size: 13px; transition: background 0.2s; }
+        .list-item:hover { background: #353b48; }
+        .list-item:last-child { border-bottom: none; }
+        
+        .list-info { flex-grow: 1; cursor: pointer; display: flex; flex-direction: column; }
+        .list-info-top { display: flex; justify-content: space-between; width: 90%; }
+        .list-info b { color: #f1c40f; }
+        .list-info span { font-size: 10px; color: #aaa; }
+        .list-archetype { display: block; font-size: 10px; color: #00d2d3; margin-top: 3px; font-style: italic; } 
+        
+        .delete-btn { color: #ff7675; cursor: pointer; font-weight: bold; margin-left: 10px; padding: 5px 10px; border-radius: 4px; }
+        .delete-btn:hover { background: rgba(255,118,117,0.1); }
+
+        .backup-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; border-top: 1px solid #444; padding-top: 15px; }
+        .btn-export { background: #636e72; font-size: 11px; }
+        .btn-import { background: #a29bfe; color: #2d3436; font-size: 11px; }
+        
+        .archetype-group { display: flex; gap: 5px; }
+        .archetype-group select { flex: 1; }
+        
+        /* Controles de posición */
+        .pos-controls { display: flex; gap: 10px; margin-top: 5px; background: #333; padding: 8px; border-radius: 5px; }
+        .pos-controls label { font-size: 10px; color: #ccc; width: 15px; }
+        .pos-controls input[type="range"] { padding: 0; margin: 0; flex: 1; height: 5px; }
+        
+        #loading { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0984e3; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            #card-canvas { transform: scale(0.9); margin-bottom: 10px; }
+        }
+        /* --- ESTILOS DEL CATÁLOGO AVANZADO --- */
+.filter-panel {
+        background: #2d3436;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        border: 1px solid #444;
+        }
+
+        .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+        }
+
+        .filter-grid input, .filter-grid select {
+        padding: 6px;
+        font-size: 11px;
+        background: #1a1a1a;
+        border: 1px solid #555;
+        color: #ddd;
+        }
+
+       .filter-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        }
+
+        .filter-header h4 { margin: 0; color: #0984e3; }
+        .toggle-icon { font-size: 12px; color: #aaa; transition: 0.3s; }
+        .collapsed .toggle-icon { transform: rotate(-90deg); }
+        .collapsed + .filter-grid { display: none; }
+
+        .btn-reset { 
+        background: #636e72; margin-top: 10px; padding: 6px; font-size: 11px; width: auto; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Procesando...</div>
+    </div>
+
+    <div id="card-canvas">
+        <div id="card-body" class="marble m-normal">
+            <div class="art-box">
+                <img id="preview-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjE1IiBoZWlnaHQ9IjE3NyIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGR5PSIuM2VtIiBmaWxsPSIjNTU1IiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JTUFHRU48L3RleHQ+PC9zdmc+">
+            </div>
+
+            <div class="header-row">
+                <div id="display-name"><span id="name-inner">NOMBRE CARTA</span></div>
+                <div id="display-attr" class="attr-badge">FIRE</div>
+            </div>
+
+            <div id="display-levels" class="level-row"></div>
+
+            <div class="effect-box-container">
+                <div class="effect-box" id="effect-container">
+                    <span class="type-line" id="display-type-line">[ TIPO ]</span>
+                    <div id="display-desc">Efecto aquí...</div>
+                </div>
+            </div>
+
+            <div class="stats-area" id="stats-ui">
+                <div class="stat-pill">ATK/ <span id="val-atk">0</span></div>
+                <div class="stat-pill">DEF/ <span id="val-def">0</span></div>
+            </div>
+
+            <div class="card-id-line" id="display-id">00000000</div>
+            <div class="footer-line" id="footer-text">
+                <div>© <span id="display-year">2026</span> <span id="display-author">AUTOR</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn-new" onclick="generateNewCard()">✨ NUEVA CARTA</button>
+        <button class="btn-clear" onclick="clearFields()">LIMPIAR CAMPOS</button>
+        
+        <input type="text" id="in-name" placeholder="Nombre de la Carta" oninput="update()">
+        <textarea id="in-desc" placeholder="Efecto de la carta" oninput="update()" rows="4"></textarea>
+        
+        <label style="font-size:11px; color:#aaa; margin-bottom:-8px;">Arquetipos</label>
+        <div class="archetype-group">
+            <select id="sel-arch1">
+                <option value="Griego">Griego</option>
+                <option value="Nórdico">Nórdico</option>
+                <option value="Egipcio">Egipcio</option>
+                <option value="Maya">Maya</option>
+                <option value="Azteca">Azteca</option>
+                <option value="Romano">Romano</option>
+                <option value="Inca">Inca</option>
+                <option value="Chino">Chino</option>
+                <option value="Japonés">Japonés</option>
+                <option value="Celta">Celta</option>
+                <option value="Hindu">Hindú</option>
+                <option value="Sumeria">Sumeria</option>
+                <option value="Polinesia">Polinesia</option>
+                <option value="Yoruba">Yoruba</option>
+                <option value="Personalizado">Personalizado</option>
+            </select>
+            <select id="sel-arch2">
+                <option value="ninguno">Ninguno (2º)</option>
+                <option value="Griego">Griego</option>
+                <option value="Nórdico">Nórdico</option>
+                <option value="Egipcio">Egipcio</option>
+                <option value="Maya">Maya</option>
+                <option value="Azteca">Azteca</option>
+                <option value="Romano">Romano</option>
+                <option value="Inca">Inca</option>
+                <option value="Chino">Chino</option>
+                <option value="Japonés">Japonés</option>
+                <option value="Celta">Celta</option>
+                <option value="Hindu">Hindú</option>
+                <option value="Sumeria">Sumeria</option>
+                <option value="Polinesia">Polinesia</option>
+                <option value="Yoruba">Yoruba</option>
+            </select>
+        </div>
+
+        <select id="sel-type" onchange="syncFromType()">
+            <option value="normal">Monstruo Normal</option>
+            <option value="effect">Monstruo Efecto</option>
+            <option value="divine">Carta de Dios</option>
+            <option value="spell">Hechizo</option>
+            <option value="rune">Runa</option>
+        </select>
+
+        <select id="sel-spell-sub" onchange="update()" style="display:none; background:#dff9fb; font-weight:bold; color:#2c3e50;">
+            <option value="normal">Normal</option>
+            <option value="continua">Continua</option>
+            <option value="campo">Bono de Campo</option>
+            <option value="rapida">Jugada Rápida</option>
+            <option value="equipo">Equipo</option>
+            <option value="dano">Daño</option>
+        </select>
+
+        <select id="sel-race" onchange="update()">
+            <option value="GUERRERO">Guerrero</option>
+            <option value="HECHICERO">Hechicero</option>
+            <option value="BESTIA">Bestia</option>
+            <option value="DRAGON">Dragón</option>
+            <option value="DEMONIO">Demonio</option>
+            <option value="MAQUINA">Máquina</option>
+            <option value="ZOMBIE">Zombie</option>
+            <option value="SERPIENTE">Serpiente</option>
+            <option value="HADA">Hada</option>
+            <option value="PLANTA">Planta</option>
+        </select>
+
+        <select id="sel-attr" onchange="syncFromAttr()">
+            <option value="fuego">Fuego</option><option value="agua">Agua</option><option value="tierra">Tierra</option>
+            <option value="viento">Viento</option><option value="luz">Luz</option><option value="oscuro">Oscuro</option>
+            <option value="dios">Dios</option><option value="runa">Runa</option><option value="hechizo">Hechizo</option>
+        </select>
+        
+        <select id="sel-rarity" onchange="update()">
+            <option value="comun">Nombre Negro (Común)</option>
+            <option value="plata">Nombre Plata (Rara)</option>
+            <option value="oro">Nombre Oro (Ultra)</option>
+        </select>
+        
+        <div style="display:flex; gap:5px;">
+            <input type="number" id="in-level" placeholder="Nivel" value="4" oninput="update()" style="flex:1">
+            <input type="text" id="in-id" placeholder="Código (Auto)" oninput="update()" style="flex:1">
+        </div>
+
+        <div style="display:flex; gap:5px;">
+            <input type="number" id="in-atk" placeholder="ATK" value="0" oninput="update()">
+            <input type="number" id="in-def" placeholder="DEF" value="0" oninput="update()">
+        </div>
+        
+        <input type="text" id="in-author" placeholder="Autor" oninput="update()">
+        <input type="number" id="in-year" value="2026" oninput="update()">
+
+        <label style="font-size:12px; font-weight:bold; margin-top:5px;">Imagen de Carta:</label>
+        <input type="file" id="file-art" onchange="processImage(event)" accept="image/*" style="font-size: 10px;">
+        
+        <div class="pos-controls">
+            <label>X:</label>
+            <input type="range" id="pos-x" min="0" max="100" value="50" oninput="updateImagePos()">
+            <label>Y:</label>
+            <input type="range" id="pos-y" min="0" max="100" value="50" oninput="updateImagePos()">
+        </div>
+        
+        <button class="btn-save" onclick="saveToLibrary()">💾 GUARDAR EN LIBRERÍA</button>
+        <button onclick="download()">📷 DESCARGAR IMAGEN (PNG)</button>
+        <button class="btn-pdf" onclick="downloadPDF()">🖨️ HOJA DE IMPRESIÓN A4 (9x)</button>
+    </div>
+<div class="library">
+    <h3 style="margin:0 0 10px 0">📚 Catálogo de Cartas</h3>
+
+    <div class="filter-panel">
+        <div class="filter-header" onclick="this.classList.toggle('collapsed')">
+            <h4>🔍 Filtros de Búsqueda (Clic para colapsar)</h4>
+            <span class="toggle-icon">▼</span>
+        </div>
+        
+        <div class="filter-grid">
+            <input type="text" id="f-name" placeholder="Nombre..." oninput="renderLibrary()">
+            <input type="text" id="f-desc" placeholder="Texto en efecto..." oninput="renderLibrary()">
+            <input type="text" id="f-id" placeholder="ID / Código..." oninput="renderLibrary()">
+            
+            <select id="f-type" onchange="renderLibrary()">
+                <option value="">- Tipo Carta -</option>
+                <option value="normal">Normal</option>
+                <option value="effect">Efecto</option>
+                <option value="divine">Dios</option>
+                <option value="spell">Hechizo</option>
+                <option value="rune">Runa</option>
+            </select>
+
+            <select id="f-attr" onchange="renderLibrary()">
+                <option value="">- Atributo -</option>
+                <option value="fuego">Fuego</option><option value="agua">Agua</option>
+                <option value="tierra">Tierra</option><option value="viento">Viento</option>
+                <option value="luz">Luz</option><option value="oscuro">Oscuro</option>
+                <option value="dios">Dios</option>
+            </select>
+
+            <select id="f-race" onchange="renderLibrary()">
+                <option value="">- Raza -</option>
+                <option value="GUERRERO">Guerrero</option><option value="HECHICERO">Hechicero</option>
+                <option value="BESTIA">Bestia</option><option value="DRAGON">Dragón</option>
+                <option value="DEMONIO">Demonio</option><option value="MAQUINA">Máquina</option>
+                <option value="ZOMBIE">Zombie</option><option value="SERPIENTE">Serpiente</option>
+                <option value="HADA">Hada</option><option value="PLANTA">Planta</option>
+            </select>
+
+            <input type="number" id="f-lvl" placeholder="Nivel =" oninput="renderLibrary()">
+            <input type="number" id="f-atk" placeholder="ATK =" oninput="renderLibrary()">
+            <input type="number" id="f-def" placeholder="DEF =" oninput="renderLibrary()">
+            
+            <input type="text" id="f-arch" placeholder="Arquetipo..." oninput="renderLibrary()">
+            <input type="text" id="f-author" placeholder="Autor..." oninput="renderLibrary()">
+        </div>
+        <button class="btn-reset" onclick="resetFilters()">Limpiar Filtros</button>
+    </div>
+
+    <div style="font-size: 11px; color:#aaa; margin-bottom:5px;">Resultados: <span id="res-count">0</span></div>
+    <div class="card-list" id="card-list"></div>
+
+    <div class="backup-controls">
+        <button class="btn-export" onclick="exportLibrary()">EXPORTAR JSON</button>
+        <button class="btn-import" onclick="document.getElementById('import-file').click()">IMPORTAR JSON</button>
+        <input type="file" id="import-file" style="display:none" onchange="importLibrary(event)">
+    </div>
+</div>
+
+
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           CONFIGURACIÓN Y DATOS ESTÁTICOS
+           ========================================= */
+        const attrs = {
+            fuego: { n: 'FIRE', g: 'radial-gradient(circle at 35% 35%, #ff5f5f, #b30000 70%, #4a0000)' }, 
+            agua: { n: 'WATER', g: 'radial-gradient(circle at 35% 35%, #5fafff, #005fcc 70%, #002d62)' },
+            tierra: { n: 'EARTH', g: 'radial-gradient(circle at 35% 35%, #a27b5c, #5d3a1a 70%, #2a1605)' }, 
+            viento: { n: 'WIND', g: 'radial-gradient(circle at 35% 35%, #81ff81, #009900 70%, #003300)' },
+            luz: { n: 'LIGHT', g: 'radial-gradient(circle at 35% 35%, #ffffca, #d4af37 70%, #6d5a00)' }, 
+            oscuro: { n: 'DARK', g: 'radial-gradient(circle at 35% 35%, #c080ff, #4b0082 70%, #220033)' },
+            dios: { n: 'DIVINE', g: 'radial-gradient(circle at 35% 35%, #fff3a0, #e67e22 70%, #8e44ad)' }, 
+            runa: { n: 'RUNE', g: 'radial-gradient(circle at 35% 35%, #ff80ed, #9b59b6 70%, #4a148c)' },
+            hechizo: { n: 'SPELL', g: 'radial-gradient(circle at 35% 35%, #3fe0c0, #16a085 70%, #0b5345)' }
+        };
+
+        const spellSubtypes = {
+            normal: "",
+            continua: " / CONTINUA",
+            campo: " / CAMPO",
+            rapida: " / JUEGO RÁPIDO",
+            equipo: " / EQUIPO",
+            dano: " / DAÑO"
+        };
+
+        let currentImageBase64 = document.getElementById('preview-img').src;
+        let libraryInMemory = [];
+
+        /* =========================================
+           MOTOR DE BASE DE DATOS (IndexedDB)
+           MEJORA: Reutilización de conexión (Performance)
+           ========================================= */
+        const DB_NAME = 'TCGForgeDB_V2';
+        const STORE_NAME = 'cards';
+
+        const db = {
+            _conn: null,
+            open: async () => {
+                if (db._conn) return db._conn;
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, 1);
+                    request.onupgradeneeded = (e) => {
+                        const dbConn = e.target.result;
+                        if (!dbConn.objectStoreNames.contains(STORE_NAME)) {
+                            dbConn.createObjectStore(STORE_NAME, { keyPath: "id" });
+                        }
+                    };
+                    request.onsuccess = (e) => {
+                        db._conn = e.target.result;
+                        resolve(db._conn);
+                    };
+                    request.onerror = (e) => reject(e);
+                });
+            },
+            save: async (card) => {
+                const conn = await db.open();
+                return new Promise((resolve, reject) => {
+                    const tx = conn.transaction(STORE_NAME, "readwrite");
+                    const store = tx.objectStore(STORE_NAME);
+                    store.put(card);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            },
+            getAll: async () => {
+                const conn = await db.open();
+                return new Promise((resolve, reject) => {
+                    const tx = conn.transaction(STORE_NAME, "readonly");
+                    const store = tx.objectStore(STORE_NAME);
+                    const req = store.getAll();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+            delete: async (id) => {
+                const conn = await db.open();
+                return new Promise((resolve, reject) => {
+                    const tx = conn.transaction(STORE_NAME, "readwrite");
+                    const store = tx.objectStore(STORE_NAME);
+                    store.delete(id);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+        };
+
+        /* =========================================
+           OPTIMIZACIÓN DE IMÁGENES & POSICIONAMIENTO
+           ========================================= */
+        function processImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showLoading(true);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    const maxWidth = 500; 
+                    const scaleSize = maxWidth / img.width;
+                    const finalW = maxWidth;
+                    const finalH = img.height * scaleSize;
+
+                    canvas.width = finalW;
+                    canvas.height = finalH;
+                    ctx.drawImage(img, 0, 0, finalW, finalH);
+
+                    currentImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                    document.getElementById('preview-img').src = currentImageBase64;
+                    
+                    // Reset sliders
+                    document.getElementById('pos-x').value = 50;
+                    document.getElementById('pos-y').value = 50;
+                    updateImagePos();
+                    
+                    showLoading(false);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // SOLUCIÓN: Posicionamiento de imagen
+        function updateImagePos() {
+            const x = document.getElementById('pos-x').value;
+            const y = document.getElementById('pos-y').value;
+            document.getElementById('preview-img').style.objectPosition = `${x}% ${y}%`;
+        }
+
+        /* =========================================
+           LÓGICA DEL CORE
+           ========================================= */
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'flex' : 'none';
+        }
+
+        function generateId() {
+            return Math.floor(10000000 + Math.random() * 90000000).toString();
+        }
+
+        function generateNewCard() {
+            clearFields();
+            document.getElementById('in-id').value = generateId();
+            update();
+        }
+
+        function clearFields() {
+            document.getElementById('in-name').value = '';
+            document.getElementById('in-desc').value = '';
+            document.getElementById('sel-type').value = 'normal';
+            document.getElementById('sel-race').value = 'GUERRERO';
+            document.getElementById('sel-spell-sub').value = 'normal';
+            document.getElementById('sel-attr').value = 'fuego';
+            document.getElementById('sel-rarity').value = 'comun';
+            document.getElementById('in-level').value = 4;
+            document.getElementById('in-atk').value = 0;
+            document.getElementById('in-def').value = 0;
+            document.getElementById('in-id').value = generateId();
+            document.getElementById('in-author').value = '';
+            
+            currentImageBase64 = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjE1IiBoZWlnaHQ9IjE3NyIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGR5PSIuM2VtIiBmaWxsPSIjNTU1IiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JTUFHRU48L3RleHQ+PC9zdmc+";
+            document.getElementById('preview-img').src = currentImageBase64;
+            
+            document.getElementById('sel-arch1').value = 'Griego';
+            document.getElementById('sel-arch2').value = 'ninguno';
+            
+            document.getElementById('pos-x').value = 50;
+            document.getElementById('pos-y').value = 50;
+            updateImagePos();
+            
+            update();
+        }
+
+        function syncFromType() {
+            const type = document.getElementById('sel-type').value;
+            const attrSel = document.getElementById('sel-attr');
+            if (type === 'divine') attrSel.value = 'dios';
+            else if (type === 'spell') attrSel.value = 'hechizo';
+            else if (type === 'rune') attrSel.value = 'runa';
+            update();
+        }
+
+        function syncFromAttr() {
+            const attr = document.getElementById('sel-attr').value;
+            const typeSel = document.getElementById('sel-type');
+            if (attr === 'dios') typeSel.value = 'divine';
+            else if (attr === 'hechizo') typeSel.value = 'spell';
+            else if (attr === 'runa') typeSel.value = 'rune';
+            else if (['divine', 'spell', 'rune'].includes(typeSel.value)) typeSel.value = 'effect';
+            update();
+        }
+
+        // SOLUCIÓN: Auto-ajuste de texto (Desbordamiento)
+        function autoResizeText() {
+            const el = document.getElementById('display-desc');
+            const container = document.getElementById('effect-container');
+            const typeLine = document.getElementById('display-type-line');
+            
+            // Restablecer
+            el.style.fontSize = '6px';
+            el.style.height = 'auto';
+            el.style.display = 'block'; // Necesario para medir scrollHeight correctamente
+            
+            const maxH = container.clientHeight - typeLine.offsetHeight - 6; // Padding approx
+            
+            let size = 6;
+            while(el.scrollHeight > maxH && size > 3.5) {
+                size -= 0.1;
+                el.style.fontSize = size + 'px';
+            }
+            
+            // Si el texto es muy corto, restaurar display flex para estética si es necesario,
+            // pero block funciona bien para wrap.
+        }
+
+        function update() {
+            const type = document.getElementById('sel-type').value;
+            const race = document.getElementById('sel-race').value;
+            const spellSub = document.getElementById('sel-spell-sub').value;
+            const rarity = document.getElementById('sel-rarity').value;
+            const attrKey = document.getElementById('sel-attr').value;
+            
+            const isMonster = !(['spell', 'rune'].includes(type));
+            const cardBody = document.getElementById('card-body');
+
+            // Mostrar/Ocultar selectores según tipo
+            document.getElementById('sel-race').style.display = isMonster ? 'block' : 'none';
+            document.getElementById('sel-spell-sub').style.display = (type === 'spell') ? 'block' : 'none';
+            
+            cardBody.className = 'marble m-' + type;
+            
+            // Lógica nombre
+            const nameInner = document.getElementById('name-inner');
+            const nameCont = document.getElementById('display-name');
+            nameInner.innerText = (document.getElementById('in-name').value || "NOMBRE CARTA").toUpperCase();
+            nameInner.style.color = (rarity==='oro') ? '#b8860b' : (rarity==='plata' ? '#555' : (type==='divine'?'white':'black'));
+            
+            nameInner.style.transform = "scaleX(1)";
+            const availableWidth = nameCont.clientWidth - 16;
+            const actualWidth = nameInner.offsetWidth;
+            if (actualWidth > availableWidth) nameInner.style.transform = `scaleX(${availableWidth / actualWidth})`;
+
+            // Atributo
+            const attrEl = document.getElementById('display-attr');
+            attrEl.innerText = attrs[attrKey].n;
+            attrEl.style.background = attrs[attrKey].g;
+
+            // Nivel
+            const lvEl = document.getElementById('display-levels');
+            lvEl.innerHTML = '';
+            if(isMonster) {
+                const levels = Math.min(document.getElementById('in-level').value, 12);
+                for(let i=0; i<levels; i++) lvEl.innerHTML += '<div class="star">★</div>';
+            }
+
+            // Tipo y Subtipo
+            let typeLineText = "";
+            if(!isMonster) {
+                if(type === 'spell') {
+                    typeLineText = "HECHIZO" + spellSubtypes[spellSub];
+                } else {
+                    typeLineText = type.toUpperCase();
+                }
+            } else {
+                if(type === 'divine') typeLineText = race + " / DIOS / EFECTO";
+                else typeLineText = race + (type==='normal'?'':' / EFECTO');
+            }
+            document.getElementById('display-type-line').innerText = `[ ${typeLineText} ]`;
+
+            // Descripción y Stats
+            document.getElementById('display-desc').innerText = document.getElementById('in-desc').value || "...";
+            document.getElementById('stats-ui').style.visibility = isMonster ? 'visible' : 'hidden';
+            document.getElementById('val-atk').innerText = document.getElementById('in-atk').value;
+            document.getElementById('val-def').innerText = document.getElementById('in-def').value;
+            
+            const idVal = document.getElementById('in-id').value;
+            document.getElementById('display-id').innerText = idVal || "00000000";
+            document.getElementById('display-author').innerText = (document.getElementById('in-author').value || "AUTOR").toUpperCase();
+            document.getElementById('display-year').innerText = document.getElementById('in-year').value;
+
+            // Llamar al auto-ajuste de texto al final
+            autoResizeText();
+        }
+
+        /* =========================================
+           INTERACCIÓN LIBRERÍA
+           ========================================= */
+        async function saveToLibrary() {
+            const idVal = document.getElementById('in-id').value || generateId();
+            
+            const card = {
+                id: idVal,
+                name: document.getElementById('in-name').value,
+                desc: document.getElementById('in-desc').value,
+                type: document.getElementById('sel-type').value,
+                race: document.getElementById('sel-race').value,
+                spellSub: document.getElementById('sel-spell-sub').value,
+                attr: document.getElementById('sel-attr').value,
+                rarity: document.getElementById('sel-rarity').value,
+                level: document.getElementById('in-level').value,
+                atk: document.getElementById('in-atk').value,
+                def: document.getElementById('in-def').value,
+                author: document.getElementById('in-author').value,
+                year: document.getElementById('in-year').value,
+                art: currentImageBase64,
+                posX: document.getElementById('pos-x').value, // Guardar posición X
+                posY: document.getElementById('pos-y').value, // Guardar posición Y
+                arch1: document.getElementById('sel-arch1').value,
+                arch2: document.getElementById('sel-arch2').value
+            };
+
+            showLoading(true);
+            try {
+                await db.save(card);
+                await refreshLibrary();
+                alert("✅ Carta guardada en la Base de Datos");
+            } catch (err) {
+                console.error(err);
+                alert("❌ Error al guardar.");
+            }
+            showLoading(false);
+        }
+
+        async function refreshLibrary() {
+            try {
+                libraryInMemory = await db.getAll();
+                renderLibrary();
+            } catch (e) { console.error("Error cargando DB", e); }
+        }
+
+/* --- NUEVA LÓGICA DE FILTRADO AVANZADO --- */
+function renderLibrary() {
+    const list = document.getElementById('card-list');
+    list.innerHTML = '';
+
+    // 1. Obtener valores de los filtros
+    const f = {
+        name: document.getElementById('f-name').value.toLowerCase(),
+        desc: document.getElementById('f-desc').value.toLowerCase(),
+        id: document.getElementById('f-id').value,
+        type: document.getElementById('f-type').value,
+        attr: document.getElementById('f-attr').value,
+        race: document.getElementById('f-race').value,
+        lvl: document.getElementById('f-lvl').value,
+        atk: document.getElementById('f-atk').value,
+        def: document.getElementById('f-def').value,
+        arch: document.getElementById('f-arch').value.toLowerCase(),
+        author: document.getElementById('f-author').value.toLowerCase()
+    };
+
+    // 2. Filtrar la memoria
+    const filtered = libraryInMemory.filter(card => {
+        // Helper para combinar arquetipos
+        const archStr = ((card.arch1 || '') + " " + (card.arch2 || '')).toLowerCase();
+        
+        // Comprobaciones (Si el filtro está vacío, pasa automáticamente)
+        const matchName = !f.name || (card.name || '').toLowerCase().includes(f.name);
+        const matchDesc = !f.desc || (card.desc || '').toLowerCase().includes(f.desc);
+        const matchId = !f.id || (card.id || '').includes(f.id);
+        
+        const matchType = !f.type || card.type === f.type;
+        const matchAttr = !f.attr || card.attr === f.attr;
+        const matchRace = !f.race || card.race === f.race;
+        
+        // Comparación exacta para números (puedes cambiar a >= si prefieres rangos)
+        const matchLvl = !f.lvl || card.level == f.lvl;
+        const matchAtk = !f.atk || card.atk == f.atk;
+        const matchDef = !f.def || card.def == f.def;
+        
+        const matchArch = !f.arch || archStr.includes(f.arch);
+        const matchAuth = !f.author || (card.author || '').toLowerCase().includes(f.author);
+
+        // DEBE CUMPLIR TODAS LAS CONDICIONES (AND)
+        return matchName && matchDesc && matchId && matchType && matchAttr && 
+               matchRace && matchLvl && matchAtk && matchDef && matchArch && matchAuth;
+    });
+
+    // 3. Actualizar contador
+    document.getElementById('res-count').innerText = filtered.length;
+
+    // 4. Renderizar (Igual que antes pero con la lista filtrada)
+    if(filtered.length === 0) {
+        list.innerHTML = '<div style="color:#aaa; text-align:center; padding:10px;">No se encontraron cartas con esos criterios.</div>';
+        return;
+    }
+
+    filtered.forEach(card => {
+        let archDisplay = card.arch1 || '---';
+        if(card.arch2 && card.arch2 !== 'ninguno') archDisplay += ' / ' + card.arch2;
+
+        const div = document.createElement('div');
+        div.className = 'list-item';
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'list-info';
+        infoDiv.onclick = () => loadCard(card.id);
+
+        // Diseño de la fila en la lista
+        infoDiv.innerHTML = `
+            <div class="list-info-top">
+                <b>${card.name || 'S/N'}</b>
+                <span>ATK/${card.atk || 0}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; width:90%">
+                <span class="list-archetype">[${archDisplay}]</span>
+                <span style="font-size:9px; color:#888;">#${card.id}</span>
+            </div>
+        `;
+
+        const delBtn = document.createElement('div');
+        delBtn.className = 'delete-btn';
+        delBtn.textContent = '✖';
+        delBtn.onclick = (e) => { e.stopPropagation(); deleteCard(card.id); };
+
+        div.appendChild(infoDiv);
+        div.appendChild(delBtn);
+        list.appendChild(div);
+    });
+}
+
+function resetFilters() {
+    document.querySelectorAll('.filter-grid input, .filter-grid select').forEach(el => el.value = '');
+    renderLibrary();
+}
+
+        async function loadCard(id) {
+            const c = libraryInMemory.find(x => x.id === id);
+            if(!c) return;
+            
+            document.getElementById('in-name').value = c.name;
+            document.getElementById('in-desc').value = c.desc;
+            document.getElementById('sel-type').value = c.type;
+            document.getElementById('sel-race').value = c.race;
+            document.getElementById('sel-spell-sub').value = c.spellSub || 'normal';
+            document.getElementById('sel-attr').value = c.attr;
+            document.getElementById('sel-rarity').value = c.rarity;
+            document.getElementById('in-level').value = c.level;
+            document.getElementById('in-atk').value = c.atk;
+            document.getElementById('in-def').value = c.def;
+            document.getElementById('in-id').value = c.id;
+            document.getElementById('in-author').value = c.author;
+            document.getElementById('in-year').value = c.year || 2026;
+            
+            currentImageBase64 = c.art;
+            document.getElementById('preview-img').src = currentImageBase64;
+            
+            // Cargar posiciones si existen
+            document.getElementById('pos-x').value = c.posX || 50;
+            document.getElementById('pos-y').value = c.posY || 50;
+            updateImagePos();
+            
+            if(c.arch1) document.getElementById('sel-arch1').value = c.arch1;
+            if(c.arch2) document.getElementById('sel-arch2').value = c.arch2;
+            
+            update();
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        async function deleteCard(id) {
+            if(!confirm("¿Borrar permanentemente?")) return;
+            await db.delete(id);
+            await refreshLibrary();
+        }
+
+        function exportLibrary() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(libraryInMemory));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "TCG_Collection_DB.json");
+            dlAnchorElem.click();
+        }
+
+        function importLibrary(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    if(!Array.isArray(imported)) throw new Error("Formato inválido");
+                    
+                    if(confirm(`¿Importar ${imported.length} cartas?`)) {
+                        showLoading(true);
+                        for (const c of imported) {
+                            await db.save(c);
+                        }
+                        await refreshLibrary();
+                        showLoading(false);
+                        alert("¡Importación completada!");
+                    }
+                } catch(err) { 
+                    alert("Error en el archivo JSON."); 
+                    showLoading(false);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function download() {
+            const element = document.querySelector("#card-canvas");
+            // SOLUCIÓN: CORS arreglado con texturas locales
+            html2canvas(element, { scale: 3, backgroundColor: null, logging: false }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = (document.getElementById('in-name').value || 'carta') + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        // SOLUCIÓN: Generación de PDF Hoja A4 con Grid 3x3
+        function downloadPDF() {
+            showLoading(true);
+            const { jsPDF } = window.jspdf;
+            const cardName = document.getElementById('in-name').value || 'carta';
+            const element = document.querySelector("#card-canvas");
+            
+            html2canvas(element, { scale: 3, logging: false }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                
+                // A4 size in mm: 210 x 297
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pageW = 210;
+                const pageH = 297;
+                
+                // Standard Card size (approx 63mm x 88mm)
+                const cardW = 63;
+                const cardH = 88;
+                const gap = 2; // small gap
+                const marginX = (pageW - (cardW * 3 + gap * 2)) / 2; // Center horizontally
+                const marginY = 15;
+                
+                // Draw 3x3 Grid
+                let count = 0;
+                for(let row=0; row<3; row++) {
+                    for(let col=0; col<3; col++) {
+                        const x = marginX + col * (cardW + gap);
+                        const y = marginY + row * (cardH + gap);
+                        pdf.addImage(imgData, 'PNG', x, y, cardW, cardH, undefined, 'FAST');
+                        count++;
+                    }
+                }
+                
+                pdf.save(`${cardName}_Sheet_A4.pdf`);
+                showLoading(false);
+            }).catch(() => showLoading(false));
+        }
+
+        window.onload = async () => {
+            update();
+            await refreshLibrary();
+        };
+    </script>
+</body>
+</html>
